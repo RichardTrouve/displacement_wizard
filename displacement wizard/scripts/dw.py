@@ -1,4 +1,4 @@
-import maya.cmds as cmds 
+import maya.cmds as cmds
 import maya.OpenMayaUI as omui
 
 from PySide2 import QtWidgets
@@ -19,7 +19,7 @@ def maya_main_window():
 class ControlMainWindow(QtWidgets.QWidget):
  
     def __init__(self, parent=None):
- 
+
         super(ControlMainWindow, self).__init__(parent)
         self.setWindowFlags(QtCore.Qt.Tool)
         self.ui = dwUi.Ui_dwUI()
@@ -31,7 +31,7 @@ class ControlMainWindow(QtWidgets.QWidget):
         self.ui.pickMap.clicked.connect(self.pickMap)
         self.ui.setup.clicked.connect(self.displacementSetup)
 
-
+#---------------------------------------------
 
     def pickMap(self):
         displacementFile = cmds.fileDialog2(dialogStyle=2, fileMode=1, cap ="Select the image file to load as displacement map",okc ="Pick")
@@ -41,27 +41,26 @@ class ControlMainWindow(QtWidgets.QWidget):
         self.ui.pickMap.setText(displacementFile[0])
         self.displacementPath = displacementFile
 
+#---------------------------------------------
 
-    
     def pickMesh(self):
         
         selection = cmds.ls (selection=True)
         mesh = cmds.filterExpand(selection, sm=12)
-        
+
         if  mesh == None:
             error = "<span style=\"color:#FF0000;\">Error : </span>"
             cmds.inViewMessage( amg=error+"your selection is not a polygon mesh ", pos='topCenter', fade=True )
             return 
 
         self.mesh = mesh
-
         self.ui.pickMesh.setText(mesh[0])    
         self.shape = cmds.listRelatives(mesh, shapes=True)
 
         print self.mesh[0]
         print self.shape[0]
 
-
+#---------------------------------------------
 
     def displacementSetup(self):
        
@@ -109,7 +108,7 @@ class ControlMainWindow(QtWidgets.QWidget):
                 currentEngine = "RenderMan"  
             cmds.inViewMessage( amg= error +" the current engine is "+ currentEngine +" not "+RenderEngineValue, pos='topCenter', fade=True )
 
-
+#---------------------------------------------
 
     def arnoldMeshSetup(self,mesh):
         shape = cmds.listRelatives(mesh, shapes=True)
@@ -120,15 +119,21 @@ class ControlMainWindow(QtWidgets.QWidget):
             cmds.setAttr(shapes+".aiSubdivUvSmoothing" ,2)
             cmds.setAttr(shapes+".aiDispPadding" ,1)
 
+#---------------------------------------------
+
     def renderManMeshSetup(self,mesh):
+
         shape = cmds.listRelatives(mesh, shapes=True)
 
         for shapes in shape:
             cmds.rman("addAttr",shapes,"rman__torattr___subdivScheme")
             cmds.rman("addAttr",shapes,"rman__torattr___subdivFacevaryingInterp")
             cmds.setAttr(shapes+'.rman__torattr___subdivFacevaryingInterp', 0)
-        
+
+#---------------------------------------------
+
     def vrayMeshSetup(self,mesh):
+
         shape = cmds.listRelatives(mesh, shapes=True) 
 
         for shapes in shape:
@@ -142,7 +147,7 @@ class ControlMainWindow(QtWidgets.QWidget):
             cmds.setAttr(shapes+".vrayDisplacementKeepContinuity" ,1)
             cmds.setAttr(shapes+".vray2dDisplacementFilterTexture" ,0)        
 
-
+#---------------------------------------------
 
     def arnoldShaderSetup(self, mesh, keepShaderValue, udimValue,DisplacementFile):
 
@@ -197,6 +202,7 @@ class ControlMainWindow(QtWidgets.QWidget):
         if keepShaderValue == "False":
             cmds.hyperShade(assign=shading_group)
 
+#---------------------------------------------
 
     def rendermanShaderSetup(self, mesh, keepShaderValue, udimValue,DisplacementFile):
 
@@ -245,6 +251,7 @@ class ControlMainWindow(QtWidgets.QWidget):
         if keepShaderValue == "False":
             cmds.hyperShade(assign=shading_group)
 
+#---------------------------------------------
 
     def vrayShaderSetup(self, mesh, keepShaderValue, udimValue,DisplacementFile):
 
@@ -300,7 +307,7 @@ class ControlMainWindow(QtWidgets.QWidget):
         if keepShaderValue == "False":
             cmds.hyperShade(assign=shading_group)
 
-
+#---------------------------------------------
 
 def run():
 
@@ -314,5 +321,3 @@ def run():
 
     win = ControlMainWindow(parent=maya_main_window())
     win.show()
-
-run()
