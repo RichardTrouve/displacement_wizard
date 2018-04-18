@@ -5,6 +5,8 @@ from PySide2 import QtWidgets
 from PySide2 import QtGui, QtCore
 from shiboken2 import wrapInstance
 
+import maya.OpenMaya as om
+
 import dwUi
 reload (dwUi)
 
@@ -34,7 +36,9 @@ class ControlMainWindow(QtWidgets.QWidget):
 #---------------------------------------------
 
     def pickMap(self):
-        displacementFile = cmds.fileDialog2(dialogStyle=2, fileMode=1, cap ="Select the image file to load as displacement map",okc ="Pick")
+        
+        Filters = "Float Displacement texture files (*.exr *.tif .*tiff .*tex)"
+        displacementFile = cmds.fileDialog2(dialogStyle=2, fileMode=1, fileFilter= Filters, cap ="Select the image file to load as displacement map",okc ="Pick")
         if displacementFile == None :
             return
 
@@ -49,16 +53,20 @@ class ControlMainWindow(QtWidgets.QWidget):
         mesh = cmds.filterExpand(selection, sm=12)
 
         if  mesh == None:
-            error = "<span style=\"color:#FF0000;\">Error : </span>"
-            cmds.inViewMessage( amg=error+"your selection is not a polygon mesh ", pos='topCenter', fade=True )
+            om.MGlobal.displayError("your selection is not a polygon mesh") 
             return 
 
         self.mesh = mesh
-        self.ui.pickMesh.setText(mesh[0])    
+        self.ui.pickMesh.setText(mesh[0])
         self.shape = cmds.listRelatives(mesh, shapes=True)
 
-        print self.mesh[0]
-        print self.shape[0]
+        for node in mesh:
+	        history = cmds.listHistory(node) or []
+	        deformHistory = cmds.ls(history, type="geometryFilter", long=True)
+	        print 'deformHistory', deformHistory    
+        
+        if not deformHistory == []:
+            om.MGlobal.displayWarning("mesh has deformer in history that might affect the displacement, don't forget to check them if the displacement isn't working as expected")
 
 #---------------------------------------------
 
@@ -71,33 +79,36 @@ class ControlMainWindow(QtWidgets.QWidget):
         udimValue = str(self.ui.udim.isChecked())
         keepShaderValue = str(self.ui.keepShader.isChecked())
         currentEngine = cmds.getAttr("defaultRenderGlobals.currentRenderer")
-        done = "<span style=\"color:#00ff00;\">Done</span>"
-        error = "<span style=\"color:#ff0000;\">Error : </span>"
+
 
         if DisplacementFile == "none" or mesh == "none":
-            cmds.inViewMessage( amg= error +"Please select a Map and a Polygon Mesh ", pos='topCenter', fade=True )
+            om.MGlobal.displayError("Please select a Map and a Polygon Mesh")
             return
 
         if RenderEngineValue == "0" and currentEngine =="arnold" :
             self.arnoldMeshSetup(mesh)
             self.arnoldShaderSetup(mesh,keepShaderValue,udimValue,DisplacementFile)
             cmds.select(storedSelection)
-            cmds.inViewMessage( amg= done, pos='topCenter', fade=True )
+            om.MGlobal.displayInfo("done")
+            
+            
 
         elif RenderEngineValue == "1" and currentEngine =="renderManRIS":
             currentEngine = "renderMan"
             self.renderManMeshSetup(mesh)
             self.rendermanShaderSetup(mesh,keepShaderValue,udimValue,DisplacementFile)
-            cmds.inViewMessage( amg= done, pos='topCenter', fade=True )
+            cmds.select(storedSelection)
+            om.MGlobal.displayInfo("done")
+            
 
 
         elif RenderEngineValue == "2" and currentEngine =="vray":
             self.vrayMeshSetup(mesh)
             self.vrayShaderSetup(mesh,keepShaderValue,udimValue,DisplacementFile)
-            cmds.inViewMessage( amg= done, pos='topCenter', fade=True )
+            cmds.select(storedSelection)
+            om.MGlobal.displayInfo("done")
 
         else:
-            error = "<span style=\"color:#FF0000;\">Error : </span>"
             if RenderEngineValue == "0":
                 RenderEngineValue = "arnold"
             elif RenderEngineValue == "1":
@@ -106,7 +117,7 @@ class ControlMainWindow(QtWidgets.QWidget):
                 RenderEngineValue = "Vray"
             if currentEngine =="renderManRIS":
                 currentEngine = "RenderMan"  
-            cmds.inViewMessage( amg= error +" the current engine is "+ currentEngine +" not "+RenderEngineValue, pos='topCenter', fade=True )
+            om.MGlobal.displayError(" the current engine is "+ currentEngine +" not "+RenderEngineValue) 
 
 #---------------------------------------------
 
@@ -128,7 +139,7 @@ class ControlMainWindow(QtWidgets.QWidget):
         for shapes in shape:
             cmds.rman("addAttr",shapes,"rman__torattr___subdivScheme")
             cmds.rman("addAttr",shapes,"rman__torattr___subdivFacevaryingInterp")
-            cmds.setAttr(shapes+'.rman__torattr___subdivFacevaryingInterp', 0)
+            cmds.setAttr(shapes+'.rman__torattr___subdivFacevaryingInterp', 3)
 
 #---------------------------------------------
 
@@ -229,7 +240,7 @@ class ControlMainWindow(QtWidgets.QWidget):
 
         if udimValue == "True":
 
-            udimcoords = range(1001,1999)
+            udimcoords = range(1001,9999)
 
             for coords in udimcoords:
                DisplacementFile = DisplacementFile.replace(str(coords), '_MAPID_')

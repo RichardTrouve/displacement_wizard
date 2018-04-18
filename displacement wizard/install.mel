@@ -1,5 +1,5 @@
 //creates a mod file in maya's module folder that routes to the script's folder  
-// I found this method in WebberHuang's DeformationLearningSolver 
+// I found this method in WebberHuang's DeformationLearningSolver  https://github.com/WebberHuang
 
 
 global string $gShelfTopLevel;
