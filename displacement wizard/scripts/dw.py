@@ -240,7 +240,7 @@ class ControlMainWindow(QtWidgets.QWidget):
 
         if udimValue == "True":
 
-            udimcoords = range(1001,9999)
+            udimcoords = range(1001,1999)
 
             for coords in udimcoords:
                DisplacementFile = DisplacementFile.replace(str(coords), '_MAPID_')
