@@ -1,9 +1,15 @@
 import maya.cmds as cmds
 import maya.OpenMayaUI as omui
 
+
 from PySide2 import QtWidgets
 from PySide2 import QtGui, QtCore
 from shiboken2 import wrapInstance
+
+from OpenEXR import OpenEXR as ox
+from PIL import Image
+import Imath
+import math
 
 import maya.OpenMaya as om
 
@@ -29,6 +35,8 @@ class ControlMainWindow(QtWidgets.QWidget):
         self.displacementPath = ["none"]
         self.mesh = ["none"]
         self.shape = ["none"]
+        self.MinLuma = ["none"]
+        self.MaxLuma = ["none"]
         self.ui.pickMesh.clicked.connect(self.pickMesh)
         self.ui.pickMap.clicked.connect(self.pickMap)
         self.ui.setup.clicked.connect(self.displacementSetup)
@@ -62,8 +70,7 @@ class ControlMainWindow(QtWidgets.QWidget):
 
         for node in mesh:
 	        history = cmds.listHistory(node) or []
-	        deformHistory = cmds.ls(history, type="geometryFilter", long=True)
-	        print 'deformHistory', deformHistory    
+	        deformHistory = cmds.ls(history, type="geometryFilter", long=True)    
         
         if not deformHistory == []:
             om.MGlobal.displayWarning("mesh has deformer in history that might affect the displacement, don't forget to check them if the displacement isn't working as expected")
@@ -86,6 +93,7 @@ class ControlMainWindow(QtWidgets.QWidget):
             return
 
         if RenderEngineValue == "0" and currentEngine =="arnold" :
+            self.getLuma(DisplacementFile)
             self.arnoldMeshSetup(mesh)
             self.arnoldShaderSetup(mesh,keepShaderValue,udimValue,DisplacementFile)
             cmds.select(storedSelection)
@@ -103,6 +111,7 @@ class ControlMainWindow(QtWidgets.QWidget):
 
 
         elif RenderEngineValue == "2" and currentEngine =="vray":
+            self.getLuma(DisplacementFile)
             self.vrayMeshSetup(mesh)
             self.vrayShaderSetup(mesh,keepShaderValue,udimValue,DisplacementFile)
             cmds.select(storedSelection)
@@ -118,6 +127,36 @@ class ControlMainWindow(QtWidgets.QWidget):
             if currentEngine =="renderManRIS":
                 currentEngine = "RenderMan"  
             om.MGlobal.displayError(" the current engine is "+ currentEngine +" not "+RenderEngineValue) 
+
+#---------------------------------------------
+
+    def getLuma(self,DisplacementFile):
+        
+        
+
+        if str(DisplacementFile).endswith('.tif'):
+            grayscale = Image.open(DisplacementFile)
+            MinLuma, MaxLuma = grayscale.getextrema()
+            
+        
+        elif str(DisplacementFile).endswith('.exr'):
+            file = ox.InputFile(DisplacementFile)
+            pt = Imath.PixelType(Imath.PixelType.FLOAT)
+            dwin = file.header()['dataWindow']
+            size = (dwin.max.x - dwin.min.x + 1, dwin.max.y - dwin.min.y + 1)
+
+            rgbf = [Image.frombytes("F", size, file.channel(c, pt)) for c in "R"]
+
+            extrema = [im.getextrema() for im in rgbf]
+            MinLuma = min([lo for (lo,hi) in extrema])
+            MaxLuma = max([hi for (lo,hi) in extrema])
+            
+
+        print '// max luma value is '+ str(MaxLuma)
+        print '// max luma value is '+ str(MinLuma)        
+
+        self.MinLuma = math.floor(MinLuma * 10000000.0) / 10000000.0
+        self.MaxLuma = math.ceil(MaxLuma * 10000000.0) / 10000000.0
 
 #---------------------------------------------
 
@@ -156,11 +195,15 @@ class ControlMainWindow(QtWidgets.QWidget):
             cmds.setAttr(shapes+".vrayEdgeLength" ,4)
             cmds.setAttr(shapes+".vrayDisplacementType" ,1)
             cmds.setAttr(shapes+".vrayDisplacementKeepContinuity" ,1)
-            cmds.setAttr(shapes+".vray2dDisplacementFilterTexture" ,0)        
+            cmds.setAttr(shapes+".vray2dDisplacementFilterTexture" ,0)
+            cmds.setAttr(shapes+".vrayDisplacementUseBounds" ,1)
 
 #---------------------------------------------
 
     def arnoldShaderSetup(self, mesh, keepShaderValue, udimValue,DisplacementFile):
+
+
+        MaxBound = max([self.MinLuma, self.MaxLuma], key=abs) 
 
         if keepShaderValue == "False":
             shader = cmds.shadingNode("aiStandard", name = mesh + "_aiStandard", asShader=True)
@@ -170,7 +213,7 @@ class ControlMainWindow(QtWidgets.QWidget):
         else:
             shape = cmds.listRelatives(mesh, shapes=True)
             shading_group = cmds.listConnections(shape,type='shadingEngine')
-            print shading_group[0]    
+                
 
         displacement_shader = cmds.shadingNode("displacementShader",name = mesh + "_displacementShader", asShader=True)
         file_node = cmds.shadingNode("file",name = mesh +"_displacement_File" , asTexture=True, isColorManaged = True)
@@ -179,6 +222,8 @@ class ControlMainWindow(QtWidgets.QWidget):
         cmds.setAttr(file_node+".filterType" ,0)
         cmds.setAttr(file_node+".fileTextureName" ,DisplacementFile, type = "string")
         cmds.setAttr(file_node+".colorSpace", "Raw", type="string")
+        cmds.setAttr(mesh+".aiDispPadding" , MaxBound)
+
 
         if udimValue == "True":
             cmds.setAttr(file_node+".uvTilingMode", 3)
@@ -189,24 +234,8 @@ class ControlMainWindow(QtWidgets.QWidget):
         else:
             cmds.connectAttr('%s.displacement' %displacement_shader ,'%s.displacementShader' %str(shading_group[0]), force=True)
 
-        cmds.connectAttr('%s.outUV' %uv ,'%s.uvCoord' %file_node)
-        cmds.connectAttr('%s.outUvFilterSize' %uv , '%s.uvFilterSize' %file_node)
-        cmds.connectAttr('%s.vertexCameraOne' %uv , '%s.vertexCameraOne' %file_node)
-        cmds.connectAttr('%s.vertexUvOne' %uv , '%s.vertexUvOne' %file_node)
-        cmds.connectAttr('%s.vertexUvThree' %uv , '%s.vertexUvThree' %file_node)
-        cmds.connectAttr('%s.vertexUvTwo' %uv , '%s.vertexUvTwo' %file_node)
-        cmds.connectAttr('%s.coverage' %uv , '%s.coverage' %file_node)
-        cmds.connectAttr('%s.mirrorU' %uv , '%s.mirrorU' %file_node)
-        cmds.connectAttr('%s.mirrorV' %uv , '%s.mirrorV' %file_node)
-        cmds.connectAttr('%s.noiseUV' %uv , '%s.noiseUV' %file_node)
-        cmds.connectAttr('%s.offset' %uv , '%s.offset' %file_node)
-        cmds.connectAttr('%s.repeatUV' %uv , '%s.repeatUV' %file_node)
-        cmds.connectAttr('%s.rotateFrame' %uv , '%s.rotateFrame' %file_node)
-        cmds.connectAttr('%s.rotateUV' %uv , '%s.rotateUV' %file_node)
-        cmds.connectAttr('%s.stagger' %uv , '%s.stagger' %file_node)
-        cmds.connectAttr('%s.translateFrame' %uv , '%s.translateFrame' %file_node)
-        cmds.connectAttr('%s.wrapU' %uv , '%s.wrapU' %file_node)
-        cmds.connectAttr('%s.wrapV' %uv , '%s.wrapV' %file_node)
+        cmds.defaultNavigation(connectToExisting=True, source=uv , destination=file_node)
+
         cmds.connectAttr('%s.outColorR' %file_node, '%s.displacement' %displacement_shader)
         cmds.select(cmds.listRelatives(mesh, shapes=True))
 
@@ -225,7 +254,7 @@ class ControlMainWindow(QtWidgets.QWidget):
         else:
             shape = cmds.listRelatives(mesh, shapes=True)
             shading_group = cmds.listConnections(shape,type='shadingEngine')
-            print shading_group[0]    
+                
 
         displacement_shader = cmds.shadingNode("PxrDisplace",name = mesh + "_PxrDisplace", asShader=True)
         displacement_transform = cmds.shadingNode("PxrDispTransform",name = mesh + "_PxrDispTransform", asUtility=True)
@@ -266,16 +295,15 @@ class ControlMainWindow(QtWidgets.QWidget):
 
     def vrayShaderSetup(self, mesh, keepShaderValue, udimValue,DisplacementFile):
 
+
         if keepShaderValue == "False":
             shader = cmds.shadingNode("VRayMtl", name = mesh +"_VRayMtl", asShader=True)        
             shading_group= cmds.sets(name = mesh + "SG", renderable=True,noSurfaceShader=True,empty=True)
             cmds.connectAttr('%s.outColor' %shader ,'%s.surfaceShader' %shading_group)
-
         else:
             shape = cmds.listRelatives(mesh, shapes=True)
             shading_group = cmds.listConnections(shape,type='shadingEngine')
-            print shading_group[0]    
-
+  
         displacement_shader = cmds.shadingNode("displacementShader",name = mesh + "_displacementShader", asShader=True)
         file_node = cmds.shadingNode("file",name = mesh +"_displacement_File" , asTexture=True, isColorManaged = True)
         uv = cmds.shadingNode("place2dTexture", asUtility=True)
@@ -288,30 +316,25 @@ class ControlMainWindow(QtWidgets.QWidget):
         if udimValue == "True":
             cmds.setAttr(file_node+".uvTilingMode", 3)
             cmds.setAttr(file_node+".uvTileProxyQuality", 4)
+        else:
+            cmds.addAttr(file_node, longName='MaxLumaValue', attributeType='double')
+            cmds.addAttr(file_node, longName='MinLumaValue', attributeType='double')
+            cmds.setAttr(file_node+".MaxLumaValue", self.MaxLuma)
+            cmds.setAttr(file_node+".MinLumaValue", self.MinLuma)
+            cmds.connectAttr('%s.MaxLumaValue' %file_node ,'%s.vrayDisplacementMaxValueR' %mesh, force=True)
+            cmds.connectAttr('%s.MaxLumaValue' %file_node ,'%s.vrayDisplacementMaxValueG' %mesh, force=True)
+            cmds.connectAttr('%s.MaxLumaValue' %file_node ,'%s.vrayDisplacementMaxValueB' %mesh, force=True)
+            cmds.connectAttr('%s.MinLumaValue' %file_node ,'%s.vrayDisplacementMinValueR' %mesh, force=True)
+            cmds.connectAttr('%s.MinLumaValue' %file_node ,'%s.vrayDisplacementMinValueG' %mesh, force=True)
+            cmds.connectAttr('%s.MinLumaValue' %file_node ,'%s.vrayDisplacementMinValueB' %mesh, force=True);    
 
         if keepShaderValue == "False":
             cmds.connectAttr('%s.displacement' %displacement_shader ,'%s.displacementShader' %shading_group, force=True)
         else:
             cmds.connectAttr('%s.displacement' %displacement_shader ,'%s.displacementShader' %str(shading_group[0]), force=True)
 
-        cmds.connectAttr('%s.outUV' %uv ,'%s.uvCoord' %file_node)
-        cmds.connectAttr('%s.outUvFilterSize' %uv , '%s.uvFilterSize' %file_node)
-        cmds.connectAttr('%s.vertexCameraOne' %uv , '%s.vertexCameraOne' %file_node)
-        cmds.connectAttr('%s.vertexUvOne' %uv , '%s.vertexUvOne' %file_node)
-        cmds.connectAttr('%s.vertexUvThree' %uv , '%s.vertexUvThree' %file_node)
-        cmds.connectAttr('%s.vertexUvTwo' %uv , '%s.vertexUvTwo' %file_node)
-        cmds.connectAttr('%s.coverage' %uv , '%s.coverage' %file_node)
-        cmds.connectAttr('%s.mirrorU' %uv , '%s.mirrorU' %file_node)
-        cmds.connectAttr('%s.mirrorV' %uv , '%s.mirrorV' %file_node)
-        cmds.connectAttr('%s.noiseUV' %uv , '%s.noiseUV' %file_node)
-        cmds.connectAttr('%s.offset' %uv , '%s.offset' %file_node)
-        cmds.connectAttr('%s.repeatUV' %uv , '%s.repeatUV' %file_node)
-        cmds.connectAttr('%s.rotateFrame' %uv , '%s.rotateFrame' %file_node)
-        cmds.connectAttr('%s.rotateUV' %uv , '%s.rotateUV' %file_node)
-        cmds.connectAttr('%s.stagger' %uv , '%s.stagger' %file_node)
-        cmds.connectAttr('%s.translateFrame' %uv , '%s.translateFrame' %file_node)
-        cmds.connectAttr('%s.wrapU' %uv , '%s.wrapU' %file_node)
-        cmds.connectAttr('%s.wrapV' %uv , '%s.wrapV' %file_node)
+        cmds.defaultNavigation(connectToExisting=True, source=uv , destination=file_node , quiet=True)
+        
         cmds.connectAttr('%s.outColorR' %file_node, '%s.displacement' %displacement_shader)
         cmds.select(cmds.listRelatives(mesh, shapes=True))
 
