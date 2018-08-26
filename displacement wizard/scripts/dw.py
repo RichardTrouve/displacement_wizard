@@ -6,9 +6,10 @@ from PySide2 import QtWidgets
 from PySide2 import QtGui, QtCore
 from shiboken2 import wrapInstance
 
-from OpenEXR import OpenEXR as ox
+from OpenEXR import OpenEXR 
+from OpenEXR import Imath
+
 from PIL import Image
-import Imath
 import math
 
 import maya.OpenMaya as om
@@ -140,7 +141,7 @@ class ControlMainWindow(QtWidgets.QWidget):
             
         
         elif str(DisplacementFile).endswith('.exr'):
-            file = ox.InputFile(DisplacementFile)
+            file = OpenEXR.InputFile(DisplacementFile)
             pt = Imath.PixelType(Imath.PixelType.FLOAT)
             dwin = file.header()['dataWindow']
             size = (dwin.max.x - dwin.min.x + 1, dwin.max.y - dwin.min.y + 1)
